@@ -59,6 +59,21 @@ arXiv:2511.06850; binary neutron stars, arXiv:2602.14145), but:
 | PSR J0737-3039A/B | Theia 58 more plausible than OC 0450 (arXiv:2602.14145) | Theia 58 in the top 4; OC 0450 weaker |
 | PSR J0826+2637 | Stock 7, ~3 Myr (Tetzlaff et al. 2014, pre-Gaia distances) | weak with Gaia distances (Stock 7 at 669 pc): f(rtot) 7.5% |
 
+## First full-size task (20,000 stars, Gaia source_id order, 2026-10-09)
+
+- 51.5 min on one server core (nice 15), 5.8 MB output, 78,122 pairs with p_r50 >= 0.001
+  (3.9 per star); validator passes.
+- Chance-alignment control (same stars, velocities from other stars):
+
+| cut | real | control | excess |
+|---|---|---|---|
+| p_r50 >= 0.05, all speeds | 5,318 | 4,835 | 10% |
+| p_r50 >= 0.05, relative speed < 20 km/s | 758 | 454 | 67% |
+
+  ~90% of all candidates are chance crossings, but slow pairs (siblings / walkaways) carry a clear
+  real excess; among the clusters with the largest excess is the known young beta Tucanae group.
+  The catalogue therefore reports, per cluster, real counts against control counts, not raw hits.
+
 ## Output and publication
 
 - Raw: every star-cluster pair with p_r50 >= 0.001 (~3 per star, ~1e8 rows, ~10 GB) and every
