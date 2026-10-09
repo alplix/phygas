@@ -104,10 +104,21 @@ typedef struct {
 } PhScreen;
 
 void ph_lin_target(const PhTarget *t, double tmax_myr, int n_samp, uint64_t seed, PhLin *out);
+// The host half of ph_lin_target (the GPU app integrates on the device): nominal phase space
+// (pos.xyz, vel.xyz) and the 6-D covariance of the draws.
+void ph_lin_target_init(const PhTarget *t, int n_samp, uint64_t seed, double ps0[6], double sig[6][6]);
+#define PH_LIN_EPS_POS 1e-5   // kpc: neighbour-orbit offsets of the state transition matrix
+#define PH_LIN_EPS_VEL 1e-5   // kpc/Myr
+#define PH_LIN_SUB 10         // leapfrog substeps per PH_PRE_STEP_MYR
 void ph_lin_cluster(const PhCluster *c, int n_samp, uint64_t seed, PhLin *out);
 void ph_lin_free(PhLin *l);
 extern double ph_screen_r;   // screening kernel radius in units of r50 (default 2); 0 = use rtot
 void ph_screen(const PhLin *t, const PhLin *c, const PhCluster *cl, uint64_t seed, PhScreen *res);
+// ph_screen in two parts: the chi2 scan over time (returns chi2, and where it is smallest), then the
+// rest of PhScreen (512-draw probabilities). Callers that drop pairs above a chi2 cut skip the second.
+double ph_screen_chi2(const PhLin *t, const PhLin *c, const PhCluster *cl, int *kb, double *sb);
+void ph_screen_finish(const PhLin *t, const PhLin *c, const PhCluster *cl, uint64_t seed,
+                      double chi2, int kb, double sb, PhScreen *res);
 
 uint64_t ph_seed(const char *target_id, const char *cluster_name);
 

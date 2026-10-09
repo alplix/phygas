@@ -221,18 +221,41 @@ void ph_pair(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr,
 }
 
 // ---- stage 1: linear screening ---------------------------------------------------------------
-#define PH_EPS_POS 1e-5     // kpc (0.01 pc)
-#define PH_EPS_VEL 1e-5     // kpc/Myr (~0.01 km/s)
+#define PH_EPS_POS PH_LIN_EPS_POS     // kpc (0.01 pc)
+#define PH_EPS_VEL PH_LIN_EPS_VEL     // kpc/Myr (~0.01 km/s)
 
-static void lin_build(PhaseSpace nom, PhaseSpace *draws, int nd, double tmax, PhLin *out) {
-    // initial 6-D covariance from the draws
-    double sig[6][6] = {{0}};
+// initial 6-D covariance from the draws
+static void lin_cov(PhaseSpace nom, const PhaseSpace *draws, int nd, double sig[6][6]) {
+    memset(sig, 0, sizeof(double[6][6]));
     for (int i = 0; i < nd; i++) {
         double d[6] = {draws[i].pos.x - nom.pos.x, draws[i].pos.y - nom.pos.y, draws[i].pos.z - nom.pos.z,
                        draws[i].vel.x - nom.vel.x, draws[i].vel.y - nom.vel.y, draws[i].vel.z - nom.vel.z};
         for (int a = 0; a < 6; a++) for (int b = 0; b < 6; b++) sig[a][b] += d[a] * d[b];
     }
     for (int a = 0; a < 6; a++) for (int b = 0; b < 6; b++) sig[a][b] /= nd > 0 ? nd : 1;
+}
+
+static void lin_integrate(PhaseSpace nom, double sig[6][6], double tmax, PhLin *out);
+
+static void lin_build(PhaseSpace nom, PhaseSpace *draws, int nd, double tmax, PhLin *out) {
+    double sig[6][6];
+    lin_cov(nom, draws, nd, sig);
+    lin_integrate(nom, sig, tmax, out);
+}
+
+void ph_lin_target_init(const PhTarget *t, int n_samp, uint64_t seed, double ps0[6], double sig[6][6]) {
+    PhaseSpace nom, *d = malloc(sizeof(PhaseSpace) * n_samp);
+    ph_sample_target(t, NULL, &nom);
+    McRng rng; mc_rng_seed(&rng, seed);
+    int k = 0;
+    for (int i = 0; i < n_samp; i++) if (ph_sample_target(t, &rng, &d[k]) == 0) k++;
+    lin_cov(nom, d, k, sig);
+    free(d);
+    ps0[0] = nom.pos.x; ps0[1] = nom.pos.y; ps0[2] = nom.pos.z;
+    ps0[3] = nom.vel.x; ps0[4] = nom.vel.y; ps0[5] = nom.vel.z;
+}
+
+static void lin_integrate(PhaseSpace nom, double sig[6][6], double tmax, PhLin *out) {
     // nominal orbit + 6 neighbours, one per phase-space axis
     Body bd[7];
     body_init(&bd[0], nom);
@@ -248,7 +271,7 @@ static void lin_build(PhaseSpace nom, PhaseSpace *draws, int nd, double tmax, Ph
     out->pos = malloc(sizeof(Vec3) * n);
     out->vel = malloc(sizeof(Vec3) * n);
     out->S = malloc(sizeof(double[6]) * n);
-    const int sub = 10;
+    const int sub = PH_LIN_SUB;
     double dt = -PH_PRE_STEP_MYR / sub;
     for (int k = 0; k < n; k++) {
         if (k > 0) for (int i = 0; i < sub; i++) for (int j = 0; j < 7; j++) body_step(&bd[j], dt);
@@ -306,7 +329,7 @@ static double quad_inv(const double M[6], Vec3 m) {
 
 double ph_screen_r = 2.0;
 
-void ph_screen(const PhLin *tl, const PhLin *cl, const PhCluster *c, uint64_t seed, PhScreen *res) {
+double ph_screen_chi2(const PhLin *tl, const PhLin *cl, const PhCluster *c, int *kb_out, double *sb_out) {
     int n = tl->n < cl->n ? tl->n : cl->n;
     // kernel radius for "inside the cluster": PH_SCREEN_R (r50 multiples; 0 = total radius)
     double R = (ph_screen_r > 0 ? ph_screen_r * c->r50_pc : c->rtot_pc) / 1000.0, R2 = R * R;
@@ -329,6 +352,13 @@ void ph_screen(const PhLin *tl, const PhLin *cl, const PhCluster *c, uint64_t se
         }
         if (q >= 0 && q < best) { best = q; kb = k; sb = s; }
     }
+    *kb_out = kb; *sb_out = sb;
+    return best;
+}
+
+void ph_screen_finish(const PhLin *tl, const PhLin *cl, const PhCluster *c, uint64_t seed,
+                      double best, int kb, double sb, PhScreen *res) {
+    int n = tl->n < cl->n ? tl->n : cl->n;
     memset(res, 0, sizeof(*res));
     res->chi2 = best;
     res->t = (kb + sb) * PH_PRE_STEP_MYR;
@@ -357,6 +387,12 @@ void ph_screen(const PhLin *tl, const PhLin *cl, const PhCluster *c, uint64_t se
     }
     res->p_r50 = (double)in50 / N;
     res->p_rtot = (double)intot / N;
+}
+
+void ph_screen(const PhLin *tl, const PhLin *cl, const PhCluster *c, uint64_t seed, PhScreen *res) {
+    int kb;
+    double sb, best = ph_screen_chi2(tl, cl, c, &kb, &sb);
+    ph_screen_finish(tl, cl, c, seed, best, kb, sb, res);
 }
 
 uint64_t ph_seed(const char *a, const char *b) {

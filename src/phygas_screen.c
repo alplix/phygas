@@ -51,9 +51,11 @@ int main(int argc, char **argv) {
         PhLin tl;
         ph_lin_target(&tg[j], tmax, n_samp, ph_seed("lin", tg[j].id), &tl);
         for (int i = 0; i < nc; i++) {
+            int kb;
+            double sb, chi2 = ph_screen_chi2(&tl, &cin[i], &cl[i], &kb, &sb);
+            if (!(chi2 < chi2_max)) continue;
             PhScreen s;
-            ph_screen(&tl, &cin[i], &cl[i], ph_seed(tg[j].id, cl[i].name), &s);
-            if (!(s.chi2 < chi2_max)) continue;
+            ph_screen_finish(&tl, &cin[i], &cl[i], ph_seed(tg[j].id, cl[i].name), chi2, kb, sb, &s);
             kept++;
             printf("%s %s %c %.3f %.3f %.2f %.2f %.4f %.4f %.2f %.3f %.3f\n", tg[j].id, cl[i].name, cl[i].kind,
                    s.chi2, s.t, s.d_nom_pc, s.sig_pc, s.p_r50, s.p_rtot, s.vrel, cl[i].age16, cl[i].age84);
