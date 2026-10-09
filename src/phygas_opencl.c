@@ -16,7 +16,7 @@
 static cl_context g_ctx;
 static cl_command_queue g_q;
 static cl_program g_prog;
-static cl_kernel g_lin, g_chi2, g_fin;
+static cl_kernel g_lin, g_chi2, g_fin, g_pair;
 static cl_device_id g_dev;
 static size_t g_local = 64;
 
@@ -90,7 +90,8 @@ int pg_init(int platform_id, int device_id) {
     g_lin = make_kernel("pg_lin_k");
     g_chi2 = make_kernel("pg_chi2_k");
     g_fin = make_kernel("pg_finish_k");
-    return g_lin && g_chi2 && g_fin ? 0 : 1;
+    g_pair = make_kernel("pg_pair_k");
+    return g_lin && g_chi2 && g_fin && g_pair ? 0 : 1;
 }
 
 PgBuf pg_alloc(size_t bytes) {
@@ -152,4 +153,11 @@ int pg_finish(PgBuf trk, PgBuf csoa, PgBuf cn, PgBuf r50s, PgBuf rts, int nc, in
     ARG_B(k, 7, hs); ARG_B(k, 8, hc); ARG_B(k, 9, hkb); ARG_B(k, 10, hsb); ARG_B(k, 11, hseed);
     ARG_I(k, 12, h0); ARG_I(k, 13, nh); ARG_B(k, 14, out);
     return run(k, nh, "finish");
+}
+
+int pg_pair(PgBuf ps, PgBuf steps, PgBuf dts, PgBuf st, PgBuf res, PgBuf params, int s0, int nk, int n) {
+    cl_kernel k = g_pair;
+    ARG_B(k, 0, ps); ARG_B(k, 1, steps); ARG_B(k, 2, dts); ARG_B(k, 3, st); ARG_B(k, 4, res); ARG_B(k, 5, params);
+    ARG_I(k, 6, s0); ARG_I(k, 7, nk); ARG_I(k, 8, n);
+    return run(k, n, "pair");
 }

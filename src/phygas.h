@@ -79,6 +79,15 @@ int ph_prefilter(const PhTrack *target, const PhTrack *cluster, const PhCluster 
 
 // The Monte Carlo search for one pair; seed must be a fixed function of the pair (reproducible).
 void ph_pair(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr, uint64_t seed, PhResult *res);
+// ph_pair in three parts (the GPU app runs the middle one on the device):
+//   ph_pair_draw   -- the clones' start states (target pos.xyz vel.xyz, cluster pos.xyz vel.xyz: 12
+//                     doubles each, n_clones slots), the step count and dt; returns the clones drawn
+//   ph_pair_clone  -- one clone traced back: closest approach (kpc), its time (Myr), speed (kpc/Myr)
+//   ph_pair_reduce -- quantiles and fractions over the m clones, in clone order
+int ph_pair_draw(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr, uint64_t seed,
+                 double *ps, int *steps, double *dt);
+void ph_pair_clone(const double *ps, int steps, double dt, double *best, double *tbest, double *vbest);
+void ph_pair_reduce(const PhCluster *c, int m, const double *best, const double *tbest, const double *vbest, PhResult *res);
 
 // ---- stage 1 for stars: linear (Gaussian) screening -------------------------------------------
 // Stars have small velocity errors, so a draw's deviation from the nominal orbit stays linear in

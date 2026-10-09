@@ -68,3 +68,10 @@ extern "C" int pg_finish(PgBuf trk, PgBuf csoa, PgBuf cn, PgBuf r50s, PgBuf rts,
     CK(cudaDeviceSynchronize());
     return 0;
 }
+
+extern "C" int pg_pair(PgBuf ps, PgBuf steps, PgBuf dts, PgBuf st, PgBuf res, PgBuf params, int s0, int nk, int n) {
+    pg_pair_k<<<blocks(n), kThreads>>>(D(ps), I(steps), D(dts), D(st), D(res), D(params), s0, nk, n);
+    CK(cudaGetLastError());
+    CK(cudaDeviceSynchronize());
+    return 0;
+}

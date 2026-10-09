@@ -177,6 +177,129 @@ static int gpu_screen(const PhTarget *tg, int nt, int start, const PhCluster *cl
     return rc;
 }
 
+static bool in_list(const char *name, const char *list);
+
+// Pair mode (pulsars; stage 2 for stars): the clones of every pair are drawn on the host exactly as
+// ph_pair draws them (ph_pair_draw), traced back on the device (pg_pair_k = ph_pair_clone) and
+// reduced on the host (ph_pair_reduce), so every line equals the CPU app's to rounding. Clones of many
+// pairs and targets go to the GPU together (PHYGAS_BATCH_CLONES, default 262144); output and the
+// checkpoint advance only by whole targets.
+static int gpu_pair(const PhTarget *tg, char *const *only, int nt, int start, const PhCluster *cl, int nc,
+                    const PhTrack *ctr, double tmax, int n_clones, double dt_myr, FILE *out) {
+    const MilkyWayParams &mw = milkyway_potential_default;
+    const double prm[9] = {mw.bulge_GM, mw.bulge_b, mw.disk_GM, mw.disk_a, mw.disk_b,
+                           mw.halo_GM, mw.halo_a, mw.halo_cutoff, mw.halo_gamma};
+    int batch = env_int("PHYGAS_BATCH_CLONES", 262144);
+    if (batch < n_clones) batch = n_clones;
+    PgBuf d_prm = pg_alloc(sizeof prm), d_ps = 0, d_steps = 0, d_dts = 0, d_st = 0, d_res = 0;
+    int cap = 0;
+    for (cap = 4 * batch; cap >= n_clones; cap /= 2) {   // device room for up to cap clones
+        d_ps = pg_alloc(sizeof(double) * 12 * (size_t)cap); d_steps = pg_alloc(sizeof(int) * (size_t)cap);
+        d_dts = pg_alloc(sizeof(double) * (size_t)cap); d_st = pg_alloc(sizeof(double) * 21 * (size_t)cap);
+        d_res = pg_alloc(sizeof(double) * 3 * (size_t)cap);
+        if (d_ps && d_steps && d_dts && d_st && d_res) break;
+        pg_free(d_ps); pg_free(d_steps); pg_free(d_dts); pg_free(d_st); pg_free(d_res);
+        d_ps = d_steps = d_dts = d_st = d_res = 0;
+    }
+    if (!d_prm || !d_ps || pg_put(d_prm, prm, sizeof prm)) { fprintf(stderr, "not enough GPU memory\n"); return 1; }
+    fprintf(stderr, "GPU pairs: %d clones per pair, up to %d clones per batch\n", n_clones, cap);
+
+    struct Pend { int j, ci, m; size_t off; };
+    struct Done { int j, ci; PhResult r; };
+    std::vector<Pend> pend;
+    std::vector<Done> done;
+    std::vector<double> cps, cdts, res;
+    std::vector<int> csteps;
+    cps.reserve((size_t)12 * cap);
+    int slice = 20, rc = 0, written = start;
+    long long n_pairs = 0, n_cl = 0;
+    double t_start = pg_now();
+
+    auto flush = [&]() -> int {
+        const int n = (int)csteps.size();
+        if (n > 0) {
+            int smax = 0;
+            for (int s : csteps) if (s > smax) smax = s;
+            if (pg_put(d_ps, cps.data(), sizeof(double) * 12 * n) || pg_put(d_steps, csteps.data(), sizeof(int) * n) ||
+                pg_put(d_dts, cdts.data(), sizeof(double) * n)) return 1;
+            for (int s0 = 0; s0 < smax; ) {
+                int k = smax - s0 < slice ? smax - s0 : slice;
+                double t0 = pg_now();
+                if (pg_pair(d_ps, d_steps, d_dts, d_st, d_res, d_prm, s0, k, n)) return 1;
+                s0 += k;
+                slice = pg_next_slice(k, pg_now() - t0, smax);
+            }
+            res.resize((size_t)3 * n);
+            if (pg_get(d_res, res.data(), sizeof(double) * 3 * n)) return 1;
+        }
+        std::vector<double> b, t, v;
+        for (const Pend &p : pend) {
+            b.resize(p.m > 0 ? p.m : 1); t.resize(b.size()); v.resize(b.size());
+            for (int k = 0; k < p.m; k++) {
+                const double *r = &res[3 * (p.off + k)];
+                b[k] = r[0]; t[k] = r[1]; v[k] = r[2];
+            }
+            Done d;
+            d.j = p.j; d.ci = p.ci;
+            ph_pair_reduce(&cl[p.ci], p.m, b.data(), t.data(), v.data(), &d.r);
+            done.push_back(d);
+        }
+        pend.clear(); cps.clear(); csteps.clear(); cdts.clear();
+        return 0;
+    };
+    // print the finished pairs of targets before `upto`, then checkpoint there
+    auto emit = [&](int upto) {
+        size_t i = 0;
+        for (; i < done.size() && done[i].j < upto; i++) {
+            const Done &d = done[i];
+            const PhResult &r = d.r;
+            fprintf(out, "%s %s %c %d %.3f %.3f %.3f %.4f %.4f %.4f %.2f %.2f %.2f %.4f %.4f\n",
+                    tg[d.j].id, cl[d.ci].name, cl[d.ci].kind, r.n, r.d05, r.d50, r.d95, r.t05, r.t50, r.t95,
+                    r.v05, r.v50, r.v95, r.f_r50, r.f_rtot);
+        }
+        done.erase(done.begin(), done.begin() + i);
+        if (upto > written) {
+            fflush(out);
+            FILE *cw = boinc_fopen("phygas_checkpoint", "w");
+            if (cw) { fprintf(cw, "%d\n", upto); fclose(cw); }
+            boinc_checkpoint_completed();
+            boinc_fraction_done((double)upto / nt);
+            written = upto;
+        }
+    };
+
+    std::vector<double> ps((size_t)12 * n_clones);
+    for (int j = start; j < nt && !rc; j++) {
+        PhTrack tt;
+        ph_track_target(&tg[j], tmax, 32, ph_seed("track", tg[j].id), &tt);
+        for (int i = 0; i < nc && !rc; i++) {
+            if (only[j] ? !in_list(cl[i].name, only[j]) : !ph_prefilter(&tt, &ctr[i], &cl[i])) continue;
+            if ((int)csteps.size() + n_clones > cap) {   // device full mid-target
+                rc = flush();
+                if (!rc) emit(j);
+            }
+            int steps;
+            double dt;
+            int m = ph_pair_draw(&tg[j], &cl[i], n_clones, dt_myr, ph_seed(tg[j].id, cl[i].name), ps.data(), &steps, &dt);
+            Pend p;
+            p.j = j; p.ci = i; p.m = m; p.off = csteps.size();
+            pend.push_back(p);
+            cps.insert(cps.end(), ps.begin(), ps.begin() + (size_t)12 * m);
+            for (int k = 0; k < m; k++) { csteps.push_back(steps); cdts.push_back(dt); }
+            n_pairs++; n_cl += m;
+        }
+        ph_track_free(&tt);
+        if (!rc && ((int)csteps.size() >= batch || j + 1 == nt)) {
+            rc = flush();
+            if (!rc) emit(j + 1);
+        }
+    }
+    if (!rc) fprintf(stderr, "GPU pairs: %d targets, %lld pairs, %lld clones in %.1f s\n", nt - start, n_pairs, n_cl,
+                     pg_now() - t_start);
+    pg_free(d_prm); pg_free(d_ps); pg_free(d_steps); pg_free(d_dts); pg_free(d_st); pg_free(d_res);
+    return rc;
+}
+
 static int arg_int(int argc, char **argv, const char *name, int def) {
     for (int i = 1; i + 1 < argc; i++) if (!strcmp(argv[i], name)) return atoi(argv[i + 1]);
     return def;
@@ -300,8 +423,10 @@ int main(int argc, char **argv) {
 #ifdef PG_GPU
     if (screen) {
         if (gpu_screen(tg, nt, start, cl, nc, clin, tmax, p1, (int)p2, p4, out)) return fail("GPU screening failed");
-        start = nt;
+    } else {
+        if (gpu_pair(tg, only, nt, start, cl, nc, ctr, tmax, (int)p1, p2, out)) return fail("GPU pair run failed");
     }
+    start = nt;
 #endif
     for (int j = start; j < nt; j++) {
         if (screen) {

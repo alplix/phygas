@@ -28,6 +28,7 @@ int pg_chi2(PgBuf trk, PgBuf csoa, PgBuf cn, PgBuf R2s, int nb, int nc, int npts
             PgBuf chi2, PgBuf kb, PgBuf sb);
 int pg_finish(PgBuf trk, PgBuf csoa, PgBuf cn, PgBuf r50s, PgBuf rts, int nc, int npts, PgBuf hs, PgBuf hc,
               PgBuf hkb, PgBuf hsb, PgBuf hseed, int h0, int nh, PgBuf out);
+int pg_pair(PgBuf ps, PgBuf steps, PgBuf dts, PgBuf st, PgBuf res, PgBuf params, int s0, int nk, int n);
 
 #define PG_TARGET_LAUNCH_S 0.25
 

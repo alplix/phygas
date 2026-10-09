@@ -8,6 +8,7 @@
 //   pg_lin_k    -- lin_integrate(): nominal orbit + 6 neighbour orbits, position covariance per point
 //   pg_chi2_k   -- ph_screen_chi2(): smallest chi2 over time of one (star, cluster) pair
 //   pg_finish_k -- ph_screen_finish(): separation, speed and the 512-draw probabilities of one pair
+//   pg_pair_k   -- ph_pair_clone(): one Monte Carlo clone of a (target, cluster) pair traced back
 //
 // Layouts. Star tracks (pg_lin_k output): [star][point][12] = pos.xyz, vel.xyz, S (xx xy xz yy yz zz).
 // Cluster tracks: [point][12][cluster] (structure of arrays, so neighbouring threads -- neighbouring
@@ -216,4 +217,58 @@ PG_KERNEL void pg_finish_k(PG_GLOBAL const double *trk, PG_GLOBAL const double *
     PG_GLOBAL double *o = out + (PG_LONG)h * 6;
     o[0] = tm; o[1] = d_nom; o[2] = sig;
     o[3] = (double)in50 / 512; o[4] = (double)intot / 512; o[5] = vrel;
+}
+
+// ph_pair_clone() of src/phygas.c for clones [0, n): steps (s0, s0 + nk] of each (a clone stops at its
+// own step count). ps: 12 per clone (target pos/vel, cluster pos/vel); st: 21 per clone (two bodies
+// x pos/vel/acc, then r0); res: 3 per clone (closest distance kpc, its time Myr, speed kpc/Myr).
+PG_KERNEL void pg_pair_k(PG_GLOBAL const double *ps, PG_GLOBAL const int *steps, PG_GLOBAL const double *dts,
+                         PG_GLOBAL double *st, PG_GLOBAL double *res, PG_GLOBAL const double *params,
+                         int s0, int nk, int n) {
+    int k = PG_TID;
+    if (k >= n) return;
+    double p[9];
+    for (int i = 0; i < 9; i++) p[i] = params[i];
+    double a[9], b[9], r0x, r0y, r0z, best, tbest, vbest;
+    PG_GLOBAL double *S = st + (PG_LONG)k * 21;
+    PG_GLOBAL double *R = res + (PG_LONG)k * 3;
+    if (s0 == 0) {
+        for (int c = 0; c < 6; c++) { a[c] = ps[(PG_LONG)k * 12 + c]; b[c] = ps[(PG_LONG)k * 12 + 6 + c]; }
+        pg_accel(p, a[0], a[1], a[2], &a[6], &a[7], &a[8]);
+        pg_accel(p, b[0], b[1], b[2], &b[6], &b[7], &b[8]);
+        r0x = a[0] - b[0]; r0y = a[1] - b[1]; r0z = a[2] - b[2];
+        best = sqrt(r0x * r0x + r0y * r0y + r0z * r0z);
+        tbest = 0;
+        double ux = a[3] - b[3], uy = a[4] - b[4], uz = a[5] - b[5];
+        vbest = sqrt(ux * ux + uy * uy + uz * uz);
+    } else {
+        for (int c = 0; c < 9; c++) { a[c] = S[c]; b[c] = S[9 + c]; }
+        r0x = S[18]; r0y = S[19]; r0z = S[20];
+        best = R[0]; tbest = R[1]; vbest = R[2];
+    }
+    int ns = steps[k];
+    double dt = dts[k];
+    for (int i = s0 + 1; i <= s0 + nk && i <= ns; i++) {
+        pg_body_step(p, a, dt);
+        pg_body_step(p, b, dt);
+        double r1x = a[0] - b[0], r1y = a[1] - b[1], r1z = a[2] - b[2];
+        // seg_min(r0, r1, &s)
+        double drx = r1x - r0x, dry = r1y - r0y, drz = r1z - r0z;
+        double dd = drx * drx + dry * dry + drz * drz, s = 0;
+        if (dd > 0) {
+            s = -(r0x * drx + r0y * dry + r0z * drz) / dd;
+            if (s < 0) s = 0; else if (s > 1) s = 1;
+        }
+        double mx = r0x + drx * s, my = r0y + dry * s, mz = r0z + drz * s;
+        double dm = sqrt(mx * mx + my * my + mz * mz);
+        if (dm < best) {
+            best = dm; tbest = (i - 1 + s) * -dt;
+            double ux = a[3] - b[3], uy = a[4] - b[4], uz = a[5] - b[5];
+            vbest = sqrt(ux * ux + uy * uy + uz * uz);
+        }
+        r0x = r1x; r0y = r1y; r0z = r1z;
+    }
+    for (int c = 0; c < 9; c++) { S[c] = a[c]; S[9 + c] = b[c]; }
+    S[18] = r0x; S[19] = r0y; S[20] = r0z;
+    R[0] = best; R[1] = tbest; R[2] = vbest;
 }

@@ -179,32 +179,49 @@ static double quantile(const double *v, int n, double q) {
     return v[i] + (pos - i) * (v[i + 1] - v[i]);
 }
 
-void ph_pair(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr, uint64_t seed, PhResult *res) {
-    double *d = malloc(sizeof(double) * n_clones * 3), *tt = d + n_clones, *vv = d + 2 * n_clones;
+int ph_pair_draw(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr, uint64_t seed,
+                 double *ps, int *steps_out, double *dt_out) {
     McRng rng; mc_rng_seed(&rng, seed);
     int steps = (int)ceil(c->tmax_myr / dt_myr);
-    double dt = -c->tmax_myr / steps;
-    int m = 0, in50 = 0, intot = 0;
+    *steps_out = steps;
+    *dt_out = -c->tmax_myr / steps;
+    int m = 0;
     for (int k = 0; k < n_clones; k++) {
         PhaseSpace ps_t, ps_c;
         if (ph_sample_target(t, &rng, &ps_t) || ph_sample_cluster(c, &rng, &ps_c)) continue;
-        Body a, b; body_init(&a, ps_t); body_init(&b, ps_c);
-        Vec3 r0 = v3_sub(a.pos, b.pos);
-        double best = v3_norm(r0), tbest = 0, vbest = v3_norm(v3_sub(a.vel, b.vel));
-        for (int i = 1; i <= steps; i++) {
-            body_step(&a, dt); body_step(&b, dt);
-            Vec3 r1 = v3_sub(a.pos, b.pos);
-            double s, dm = seg_min(r0, r1, &s);
-            if (dm < best) {
-                best = dm; tbest = (i - 1 + s) * -dt;
-                vbest = v3_norm(v3_sub(a.vel, b.vel));
-            }
-            r0 = r1;
-        }
-        d[m] = best * 1000.0; tt[m] = tbest; vv[m] = nostos_kpcmyr_to_kms(vbest);
-        if (d[m] < c->r50_pc) in50++;
-        if (d[m] < c->rtot_pc) intot++;
+        double *o = ps + (size_t)m * 12;
+        o[0] = ps_t.pos.x; o[1] = ps_t.pos.y; o[2] = ps_t.pos.z; o[3] = ps_t.vel.x; o[4] = ps_t.vel.y; o[5] = ps_t.vel.z;
+        o[6] = ps_c.pos.x; o[7] = ps_c.pos.y; o[8] = ps_c.pos.z; o[9] = ps_c.vel.x; o[10] = ps_c.vel.y; o[11] = ps_c.vel.z;
         m++;
+    }
+    return m;
+}
+
+void ph_pair_clone(const double *ps, int steps, double dt, double *best_out, double *tbest_out, double *vbest_out) {
+    PhaseSpace pt = {{ps[0], ps[1], ps[2]}, {ps[3], ps[4], ps[5]}}, pc = {{ps[6], ps[7], ps[8]}, {ps[9], ps[10], ps[11]}};
+    Body a, b; body_init(&a, pt); body_init(&b, pc);
+    Vec3 r0 = v3_sub(a.pos, b.pos);
+    double best = v3_norm(r0), tbest = 0, vbest = v3_norm(v3_sub(a.vel, b.vel));
+    for (int i = 1; i <= steps; i++) {
+        body_step(&a, dt); body_step(&b, dt);
+        Vec3 r1 = v3_sub(a.pos, b.pos);
+        double s, dm = seg_min(r0, r1, &s);
+        if (dm < best) {
+            best = dm; tbest = (i - 1 + s) * -dt;
+            vbest = v3_norm(v3_sub(a.vel, b.vel));
+        }
+        r0 = r1;
+    }
+    *best_out = best; *tbest_out = tbest; *vbest_out = vbest;
+}
+
+void ph_pair_reduce(const PhCluster *c, int m, const double *best, const double *tbest, const double *vbest, PhResult *res) {
+    double *d = malloc(sizeof(double) * (m > 0 ? m : 1) * 3), *tt = d + (m > 0 ? m : 1), *vv = d + 2 * (m > 0 ? m : 1);
+    int in50 = 0, intot = 0;
+    for (int k = 0; k < m; k++) {
+        d[k] = best[k] * 1000.0; tt[k] = tbest[k]; vv[k] = nostos_kpcmyr_to_kms(vbest[k]);
+        if (d[k] < c->r50_pc) in50++;
+        if (d[k] < c->rtot_pc) intot++;
     }
     memset(res, 0, sizeof(*res));
     res->n = m;
@@ -218,6 +235,17 @@ void ph_pair(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr,
         res->v05 = quantile(vv, m, 0.05); res->v50 = quantile(vv, m, 0.5); res->v95 = quantile(vv, m, 0.95);
     }
     free(d);
+}
+
+void ph_pair(const PhTarget *t, const PhCluster *c, int n_clones, double dt_myr, uint64_t seed, PhResult *res) {
+    double *ps = malloc(sizeof(double) * 12 * (n_clones > 0 ? n_clones : 1));
+    double *out = malloc(sizeof(double) * 3 * (n_clones > 0 ? n_clones : 1));
+    int steps;
+    double dt;
+    int m = ph_pair_draw(t, c, n_clones, dt_myr, seed, ps, &steps, &dt);
+    for (int k = 0; k < m; k++) ph_pair_clone(ps + (size_t)k * 12, steps, dt, &out[k], &out[m + k], &out[2 * m + k]);
+    ph_pair_reduce(c, m, out, out + m, out + 2 * m, res);
+    free(ps); free(out);
 }
 
 // ---- stage 1: linear screening ---------------------------------------------------------------
