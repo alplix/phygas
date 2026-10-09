@@ -1,5 +1,8 @@
 // Phygas stage 1 for stars: linear screening of every (star, cluster) pair.
-//   phygas_screen clusters.txt stars.txt [chi2_max=25] [n_samp=64] [r_kernel=2 (x r50; 0 = total radius)]
+//   phygas_screen clusters.txt stars.txt [chi2_max=25] [n_samp=64] [r_kernel=2 (x r50; 0 = total radius)] [control]
+// control: chance-alignment run -- every star keeps its position and parallax but takes the proper
+// motions and radial velocity of the star half a file away (so no real birth link survives, only
+// chance crossings); comparing a cluster's candidates with and without it gives its false-alarm rate.
 // One line per pair with chi2 < chi2_max on stdout:
 //   target cluster kind chi2 t_myr d_nom_pc sig_pc p_r50 p_rtot vrel_kms age16 age84
 // chi2: smallest Mahalanobis distance over time between the pair's nominal separation and zero,
@@ -18,6 +21,7 @@ int main(int argc, char **argv) {
     double chi2_max = argc > 3 ? atof(argv[3]) : 25.0;
     int n_samp = argc > 4 ? atoi(argv[4]) : 64;
     if (argc > 5) ph_screen_r = atof(argv[5]);
+    int control = argc > 6 && argv[6][0] == 'c';
     ph_init();
     PhCluster *cl; PhTarget *tg;
     int nc = ph_read_clusters(argv[1], &cl), nt = ph_read_targets(argv[2], &tg);
@@ -28,6 +32,19 @@ int main(int argc, char **argv) {
     PhLin *cin = malloc(sizeof(PhLin) * nc);
     for (int i = 0; i < nc; i++) ph_lin_cluster(&cl[i], n_samp, ph_seed("lin", cl[i].name), &cin[i]);
     fprintf(stderr, "%d clusters prepared in %.1f s; %d targets\n", nc, (double)(clock() - t0) / CLOCKS_PER_SEC, nt);
+    if (control) {   // velocities of the star nt/2 away; proper motions rescaled by the parallax
+        PhTarget *v = malloc(sizeof(PhTarget) * nt);   // ratio so the physical tangential speed is kept
+        for (int j = 0; j < nt; j++) {
+            v[j] = tg[j];
+            const PhTarget *o = &tg[(j + nt / 2) % nt];
+            double f = (tg[j].plx > 0 && o->plx > 0) ? tg[j].plx / o->plx : 1.0;
+            v[j].pmra = o->pmra * f; v[j].e_pmra = o->e_pmra * f;
+            v[j].pmdec = o->pmdec * f; v[j].e_pmdec = o->e_pmdec * f;
+            v[j].rv = o->rv; v[j].e_rv = o->e_rv; v[j].has_rv = o->has_rv;
+        }
+        free(tg); tg = v;
+        fprintf(stderr, "control run: velocities taken from the star %d lines away\n", nt / 2);
+    }
     long kept = 0;
     t0 = clock();
     for (int j = 0; j < nt; j++) {
