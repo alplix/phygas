@@ -21,7 +21,7 @@ arXiv:2511.06850; binary neutron stars, arXiv:2602.14145), but:
 3. ~700 pulsars have a proper motion, not 145: dispersion-measure distances can enter the Monte Carlo
    with their errors.
 
-## Data (server: /home/alp/phygas_data)
+## Data
 
 | file | from | rows |
 |---|---|---|
@@ -76,6 +76,7 @@ arXiv:2511.06850; binary neutron stars, arXiv:2602.14145), but:
 
 ## Output and publication
 
+- Pulsar results (one Zenodo record and DOI per pulsar, with a figure each): https://bitboinc.athena.org.tr/phygas_pulsars.php
 - Raw: every star-cluster pair with p_r50 >= 0.001 (~3 per star, ~1e8 rows, ~10 GB) and every
   pulsar-cluster pair -> Zenodo, split into sky regions, one concept DOI.
 - One Zenodo record (DOI) per cluster (stars and neutron stars that may have left it) and per pulsar.
