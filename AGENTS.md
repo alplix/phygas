@@ -37,6 +37,7 @@ Carlo with `n_clones` clones. `out` gets one line per kept (target, cluster) pai
 | `scripts/prepare_clusters.py` | Hunt & Reffert 2024 `clusters.dat` to `young_clusters.txt` and `globular_clusters.txt` |
 | `scripts/prepare_pulsars.py` | ATNF catalogue (HEASARC copy) to `pulsars.txt`; needs astropy |
 | `scripts/make_star_catalog.py` | Gaia DR3 6-D CSV to the star target catalogue (`.txt.gz`); imports nostos code (PHY-014) |
+| `scripts/bench/` | Speed A/B of builds on generated work units, against a fake BOINC runtime (`boinc_stub/`); `mac_ab.sh` does it all on a Mac. Method, expected hot spots, candidate speed-ups and results: `docs/BENCHMARK.md` |
 | `docs/kb/` | Knowledge base (below) |
 
 There is no vendored third-party code. `data/` and `build/` are in `.gitignore`.
@@ -130,12 +131,16 @@ cc -O2 -std=c99 -I src src/phygas.c src/coords.c src/potential.c src/montecarlo.
 (both lines built and run with Apple clang on 2026-10-27). Run before and after the change on the same input and
 `cmp` the outputs. The BOINC app needs BOINC's `api/` and `lib/`, or a small stand-in for the calls it uses
 (`boinc_init_options`, `boinc_resolve_filename`, `boinc_fopen`, `boinc_get_init_data`, `boinc_time_to_checkpoint`,
-`boinc_checkpoint_completed`, `boinc_fraction_done`, `boinc_finish`); kampylos's `tests/boinc_stub/` is a model.
+`boinc_checkpoint_completed`, `boinc_fraction_done`, `boinc_finish`); `scripts/bench/boinc_stub/` is one (written
+for the speed benchmark; syntax-checked with Apple clang 14 on 2026-11-04, not yet built), kampylos's `tests/boinc_stub/` another.
 
 * Core or kernel change: CLI `cmp`, and a GPU run compared with the CPU app on one work unit (needs a GPU host).
 * Checkpoint change: quit and kill a run (a quit is `fflush(NULL)` then `exit`, not SIGKILL) and `cmp` with an
   uninterrupted run (PHY-001, Test).
 * Compiler flags or math code: a cross-platform diff (PHY-005).
+* Speed change: `scripts/bench/run_bench.sh` against the old build (`build_variant.sh` with `REF=`, or `mac_ab.sh` on a
+  Mac); claim a gain only by the rule in `docs/BENCHMARK.md`, and show `same output` or explain why the rows changed (a
+  result-changing speed-up is a science change, see Conventions). The suite has not been run yet (2026-11-04).
 
 ## Environment notes
 

@@ -1,0 +1,14 @@
+# Stage 2 for stars, quick: 30 synthetic stars with measured radial velocities, each with 10 named clusters (its source
+# cluster first when it was planted), 1000 clones, dt 0.05 Myr. The clusters= lists skip the prefilter, so the work is
+# exact: 300 pairs x 1000 clones x about 700 steps (see the summary make_bench_data.py prints).
+# Why: the same loop as pulsar.wu, but with many small pairs and with known radial velocities, as in stage 2: the GPU
+# app's batches (262,144 clones) then hold many pairs, each with its own host draw, and the CPU app takes its clusters=
+# path (in_list). It is also a pair-mode profile whose size does not depend on how many clusters the prefilter passes.
+# The clone count of a real stage-2 task is not in this repository; 1000 is the pulsar figure.
+# Expected on an Apple M1: 20-60 s. Expected, not measured.
+header PHYGAS 1 pair 1000 0.05
+clusters 4087
+targets 30
+kind S
+listed 10
+seed 1
