@@ -1,0 +1,15 @@
+# One pulsar task, quick: a synthetic pulsar (no radial velocity, 25 % distance error) against 4,087 synthetic clusters,
+# 100 clones, dt 0.05 Myr, no clusters= list, so ph_prefilter decides. For an unknown radial velocity (+-265 km/s) its
+# margin grows by about 0.8 kpc per Myr, so nearly every cluster should pass and the task runs about 4,087 pairs.
+# Why: pair mode is one loop, ph_pair_clone: two body_step calls (one milkyway_accel each, with three pow calls) and a
+# segment test per step, for every clone of every pair. It is the hot spot of pulsar tasks and of stage 2, and of the
+# integration part of screening. A change to the potential, the leapfrog or the compiler's code for them shows here.
+# Production is 1000 clones (README.md); 100 clones are what the authors checked the GPU pair mode with (commit b63a70a).
+# Copy this file and change the 100 for a GPU host, where the quick profile is too short.
+# Expected on an Apple M1: 30-80 s (README.md: about 2 minutes per pulsar at 200 clones, machine not named).
+# Expected, not measured.
+header PHYGAS 1 pair 100 0.05
+clusters 4087
+targets 1
+kind P
+seed 1

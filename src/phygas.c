@@ -357,7 +357,18 @@ static double quad_inv(const double M[6], Vec3 m) {
 
 double ph_screen_r = 2.0;
 
-double ph_screen_chi2(const PhLin *tl, const PhLin *cl, const PhCluster *c, int *kb_out, double *sb_out) {
+// ph_screen_chi2() with a cut: the caller drops every pair whose chi2 is not below chi2_max, so a point of the scan
+// whose chi2 is certainly far above the cut need not be computed (2026-11-04, docs/BENCHMARK.md "Results"). For the
+// symmetric positive-definite M of a point (two covariances plus R^2 on the diagonal), m^T M^-1 m >= |m|^2 /
+// lambda_max(M) >= |m|^2 / trace(M). The point's chi2 is the smaller of the forms at the step's start and at the
+// closest point of the step's segment, and that closest point is the nearest to the origin, so the point's chi2 is at
+// least dist^2 / trace(M) with dist the segment's distance from the origin. The test below compares dist^2 with
+// 2 * chi2_max * trace(M) without a division (the factor 2 keeps the rounding of the computed forms far from the
+// decision; a Gershgorin bound instead of the trace was tried and rejected no more points). A skipped point cannot be the minimum of a pair that is kept (its chi2 is above the cut, the kept minimum
+// below it), so a kept pair gets the same chi2, kb and sb bit for bit, and a dropped pair stays dropped: the rows are
+// identical. chi2_max = INFINITY skips nothing, which is ph_screen_chi2(). The GPU kernels scan every point.
+double ph_screen_chi2_cut(const PhLin *tl, const PhLin *cl, const PhCluster *c, double chi2_max, int *kb_out,
+                          double *sb_out) {
     int n = tl->n < cl->n ? tl->n : cl->n;
     // kernel radius for "inside the cluster": PH_SCREEN_R (r50 multiples; 0 = total radius)
     double R = (ph_screen_r > 0 ? ph_screen_r * c->r50_pc : c->rtot_pc) / 1000.0, R2 = R * R;
@@ -369,9 +380,20 @@ double ph_screen_chi2(const PhLin *tl, const PhLin *cl, const PhCluster *c, int 
         for (int i = 0; i < 6; i++) M[i] = tl->S[k][i] + cl->S[k][i];
         M[0] += R2; M[3] += R2; M[5] += R2;
         Vec3 m0 = v3_sub(tl->pos[k], cl->pos[k]);
+        Vec3 m1 = m0;
+        if (k + 1 < n) m1 = v3_sub(tl->pos[k + 1], cl->pos[k + 1]);
+        double thr = 2.0 * chi2_max * (M[0] + M[3] + M[5]);
+        if (thr < INFINITY) {
+            // squared distance of the segment m0..m1 from the origin, compared with thr times dd to avoid the division
+            Vec3 dr = v3_sub(m1, m0);
+            double a = v3_dot(m0, dr), dd = v3_dot(dr, dr), far;
+            if (a >= 0) far = v3_dot(m0, m0) > thr;              // closest at the start (also a step that does not move)
+            else if (-a >= dd) far = v3_dot(m1, m1) > thr;      // closest at the end
+            else far = v3_dot(m0, m0) * dd - a * a > thr * dd;  // closest inside
+            if (far) continue;
+        }
         double q = quad_inv(M, m0), s = 0;
         if (k + 1 < n) {   // the means move ~linearly within a step: check their closest point too
-            Vec3 m1 = v3_sub(tl->pos[k + 1], cl->pos[k + 1]);
             double dmin = seg_min(m0, m1, &s);
             (void)dmin;
             Vec3 ms = v3_add(m0, v3_scale(v3_sub(m1, m0), s));
@@ -382,6 +404,10 @@ double ph_screen_chi2(const PhLin *tl, const PhLin *cl, const PhCluster *c, int 
     }
     *kb_out = kb; *sb_out = sb;
     return best;
+}
+
+double ph_screen_chi2(const PhLin *tl, const PhLin *cl, const PhCluster *c, int *kb_out, double *sb_out) {
+    return ph_screen_chi2_cut(tl, cl, c, INFINITY, kb_out, sb_out);
 }
 
 void ph_screen_finish(const PhLin *tl, const PhLin *cl, const PhCluster *c, uint64_t seed,

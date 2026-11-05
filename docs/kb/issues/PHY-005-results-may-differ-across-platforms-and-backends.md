@@ -88,3 +88,4 @@ src/phygas_screen.c -lm` and `cmp` the outputs.
 - 2026-10-27: recorded from the 2026-10-21 audit; build flags and math calls verified at 0a3eda2 by reading the
   scripts and sources; contraction effect measured on Apple M1 with synthetic input (above). Status stays new: no
   cross-platform measurement with real work units, validator unknown.
+- 2026-11-04: measured on an Apple M4 Pro (docs/BENCHMARK.md, Results): the rows of screen, pulsar and stage2 are byte-identical across macOS Apple clang 21 (-O2, -O3, -flto, -ffp-contract=off), Linux arm64 GCC 12 and clang 14, Linux x86_64 GCC 12 and Windows MinGW-w64 GCC 16 (Wine); at the printed precision these synthetic profiles show no platform difference. Real data and the GPU apps not checked.
