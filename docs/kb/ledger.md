@@ -44,3 +44,4 @@ When code that a row describes changes a lot, check the pattern again and update
 | PAT-031 | n/a | 2026-11-04 | 8003821 |  | no thread_local or __thread in src/ (git grep) |
 | PAT-032 | not-affected | 2026-11-04 | 8003821 |  | allocations per target and per pair; macOS sample of screen 2026-11-04 shows no allocator |
 | PAT-033 | affected | 2026-11-04 | 8003821 | PHY-022 | gpu_screen and gpu_pair: host work and device work take turns |
+| PAT-034 | n/a | 2026-11-10 | 2425021 |  | no work generator or work-unit template here (git grep rsc_fpops: no hits); task length depends on the input (server status 2026-11-10: recent tasks 0.02-8.95 h), so the generator's bound must cover the slowest input |
