@@ -1,0 +1,12 @@
+# One production-size stage-1 task: 20,000 synthetic stars against 4,087 synthetic clusters ("about 20,000 stars per
+# task", AGENTS.md), the same stars as screen.wu and 18,000 more. Use it for the final number of a change that screen.wu
+# shows, and for the GPU apps: the CUDA/OpenCL app did 20,000 stars in about 12 s on an RTX 5070 Ti (commit 8bb46cb), so
+# only a task this size makes the GPU part longer than the one-time cluster precompute on the host.
+# Header as in screen.wu.
+# Expected on an Apple M1, CPU app: about 7 minutes (20,000 x 0.02 s plus the precompute); a GPU host: well under a
+# minute. Expected, not measured. Three rounds of two builds take about 45 minutes on the M1.
+header PHYGAS 1 screen 25 64 2 0.001
+clusters 4087
+targets 20000
+kind S
+seed 1

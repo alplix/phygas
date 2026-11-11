@@ -1,0 +1,30 @@
+--- a/src/potential.c
++++ b/src/potential.c
+@@ -54,7 +54,14 @@
+ static double halo_enclosed_GM(const MilkyWayParams *p, double r) {
+     double r_eff = (r < p->halo_cutoff) ? r : p->halo_cutoff;
+     double x = r_eff / p->halo_a;
++#ifdef PHYGAS_FAST_POW
++    // Experiment (scripts/bench/patches/fast-pow.patch): x^gamma as x * x^(gamma-1), one pow instead of two. The same
++    // value mathematically, other last bits: a science change (docs/BENCHMARK.md, candidate 4).
++    double xg1 = pow(x, p->halo_gamma - 1.0);
++    return p->halo_GM * (x * xg1) / (1.0 + xg1);
++#else
+     return p->halo_GM * pow(x, p->halo_gamma) / (1.0 + pow(x, p->halo_gamma - 1.0));
++#endif
+ }
+ 
+ static void milkyway_accel(const Potential *pot, Vec3 pos, Vec3 *out) {
+@@ -68,7 +75,12 @@
+ 
+     // Plummer bulge: Phi = -GM/sqrt(r^2+b^2); accel = -GM/(r^2+b^2)^1.5 * pos
+     {
++#ifdef PHYGAS_FAST_POW
++        double d2 = r * r + p->bulge_b * p->bulge_b;
++        double denom = d2 * sqrt(d2);   // experiment: (r^2+b^2)^1.5 without pow
++#else
+         double denom = pow(r * r + p->bulge_b * p->bulge_b, 1.5);
++#endif
+         double f = -p->bulge_GM / (denom > 0 ? denom : 1e-12);
+         a_total = v3_add(a_total, v3_scale(pos, f));
+     }

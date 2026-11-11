@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
         ph_lin_target(&tg[j], tmax, n_samp, ph_seed("lin", tg[j].id), &tl);
         for (int i = 0; i < nc; i++) {
             int kb;
-            double sb, chi2 = ph_screen_chi2(&tl, &cin[i], &cl[i], &kb, &sb);
+            double sb, chi2 = ph_screen_chi2_cut(&tl, &cin[i], &cl[i], chi2_max, &kb, &sb);
             if (!(chi2 < chi2_max)) continue;
             PhScreen s;
             ph_screen_finish(&tl, &cin[i], &cl[i], ph_seed(tg[j].id, cl[i].name), chi2, kb, sb, &s);

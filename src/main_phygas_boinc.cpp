@@ -434,7 +434,7 @@ int main(int argc, char **argv) {
             ph_lin_target(&tg[j], tmax, (int)p2, ph_seed("lin", tg[j].id), &tl);
             for (int i = 0; i < nc; i++) {
                 int kb;
-                double sb, chi2 = ph_screen_chi2(&tl, &clin[i], &cl[i], &kb, &sb);
+                double sb, chi2 = ph_screen_chi2_cut(&tl, &clin[i], &cl[i], p1, &kb, &sb);
                 if (!(chi2 < p1)) continue;   // dropped anyway: skip the 512-draw probabilities
                 PhScreen s;
                 ph_screen_finish(&tl, &clin[i], &cl[i], ph_seed(tg[j].id, cl[i].name), chi2, kb, sb, &s);

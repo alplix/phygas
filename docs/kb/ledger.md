@@ -41,3 +41,7 @@ When code that a row describes changes a lot, check the pattern again and update
 | PAT-028 | not-affected | 2026-10-27 | 0a3eda2 |  | guards PG_GPU, PG_OPENCL (main_phygas_boinc.cpp:29, 339, 345, 350, 423) and EXPECTED_GPU_VENDOR (phygas_opencl.c:12) are defined by every shipped GPU build (build_gpu_server.sh:35, 48, 51, 70, 73; build_gpu_windows.bat:16); a missing one would be silent (CPU app, or no vendor filter) |
 | PAT-029 | affected | 2026-10-27 | 0a3eda2 | PHY-020 | build_gpu_server.sh:59, 61 pull images by tag, :18 apt-get install without versions |
 | PAT-030 | n/a | 2026-10-27 | 0a3eda2 |  | no boinc_temporary_exit() and no deliberate exit without boinc_finish() in src/ (git grep) |
+| PAT-031 | n/a | 2026-11-04 | 8003821 |  | no thread_local or __thread in src/ (git grep) |
+| PAT-032 | not-affected | 2026-11-04 | 8003821 |  | allocations per target and per pair; macOS sample of screen 2026-11-04 shows no allocator |
+| PAT-033 | affected | 2026-11-04 | 8003821 | PHY-022 | gpu_screen and gpu_pair: host work and device work take turns |
+| PAT-034 | n/a | 2026-11-10 | 2425021 |  | no work generator or work-unit template here (git grep rsc_fpops: no hits); task length depends on the input (server status 2026-11-10: recent tasks 0.02-8.95 h), so the generator's bound must cover the slowest input |

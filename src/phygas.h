@@ -126,6 +126,9 @@ void ph_screen(const PhLin *t, const PhLin *c, const PhCluster *cl, uint64_t see
 // ph_screen in two parts: the chi2 scan over time (returns chi2, and where it is smallest), then the
 // rest of PhScreen (512-draw probabilities). Callers that drop pairs above a chi2 cut skip the second.
 double ph_screen_chi2(const PhLin *t, const PhLin *c, const PhCluster *cl, int *kb, double *sb);
+// The same for callers that drop every pair with chi2 >= chi2_max: points that cannot bring chi2 below the cut are
+// skipped, and every pair below the cut gets the same chi2, kb and sb as from ph_screen_chi2().
+double ph_screen_chi2_cut(const PhLin *t, const PhLin *c, const PhCluster *cl, double chi2_max, int *kb, double *sb);
 void ph_screen_finish(const PhLin *t, const PhLin *c, const PhCluster *cl, uint64_t seed,
                       double chi2, int kb, double sb, PhScreen *res);
 
